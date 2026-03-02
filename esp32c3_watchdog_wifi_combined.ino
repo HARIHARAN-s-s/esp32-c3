@@ -1,69 +1,78 @@
 #include <WiFi.h>
-#include <FreeRTOS.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
-// WiFi Credentials
+// WiFi credentials
 const char* ssid = "OPPO A5";
 const char* password = "12345678";
 
-// FreeRTOS Task Handles
-TaskHandle_t scanTaskHandle = NULL;
-TaskHandle_t watchdogTaskHandle = NULL;
+// Watchdog timer settings
+const int watchdogTimeout = 20000; // 20 seconds
 
-// Watchdog Timer
-hw_timer_t *watchdogTimer = NULL;
-volatile bool watchdogTriggered = false;
-
-void IRAM_ATTR onWatchdogTimer() {
-    watchdogTriggered = true;
-}
-
-void wifiScanTask(void *parameter) {
-    while (true) {
-        Serial.println("Scanning for WiFi...");
-        int n = WiFi.scanNetworks();
-        Serial.printf("Found %d networks:
-", n);
-        for (int i = 0; i < n; ++i) {
-            Serial.printf("%d: %s (%d)\n", i + 1, WiFi.SSID(i).c_str(), WiFi.RSSI(i));
-        }
-        vTaskDelay(pdMS_TO_TICKS(30000)); // Scan every 30 seconds
-    }
-}
-
-void watchdogTask(void *parameter) {
-    while (true) {
-        if (watchdogTriggered) {
-            Serial.println("Watchdog triggered! System will reset.");
-            esp_restart(); // Restart the ESP32
-        }
-        // Reset watchdog
-        watchdogTriggered = false;
-        vTaskDelay(pdMS_TO_TICKS(5000)); // Check every 5 seconds
-    }
-}
+// Function prototypes
+void connectToWiFi();
+void task1(void *pvParameters);
+void task2(void *pvParameters);
+void task3(void *pvParameters);
 
 void setup() {
     Serial.begin(115200);
-    // Connect to WiFi
-    WiFi.begin(ssid, password);
-    Serial.print("Connecting to WiFi");
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(1000);
-        Serial.print(".");
-    }
-    Serial.println("\nConnected to WiFi");
-    
-    // Start FreeRTOS tasks
-    xTaskCreate(wifiScanTask, "Wifi Scan Task", 2048, NULL, 1, &scanTaskHandle);
-    xTaskCreate(watchdogTask, "Watchdog Task", 2048, NULL, 1, &watchdogTaskHandle);
 
-    // Configure Watchdog Timer
-    watchdogTimer = timerBegin(0, 80, true);
-    timerAttachInterrupt(watchdogTimer, &onWatchdogTimer, true);
-    timerAlarmWrite(watchdogTimer, 5000 * 1000, false); // 5 seconds
-    timerAlarmEnable(watchdogTimer);
+    // Set up the watchdog timer
+    esp_task_wdt_init(watchdogTimeout / 1000, true);
+
+    // Connect to WiFi
+    connectToWiFi();
+
+    // Create FreeRTOS tasks
+    xTaskCreate(task1, "Task 1", 10000, NULL, 1, NULL);
+    xTaskCreate(task2, "Task 2", 10000, NULL, 1, NULL);
+    xTaskCreate(task3, "Task 3", 10000, NULL, 1, NULL);
 }
 
 void loop() {
-    // Main loop does nothing, everything is handled in tasks
+    // Reset the watchdog timer
+    esp_task_wdt_reset();
+    delay(1000);
+}
+
+void connectToWiFi() {
+    Serial.printf("Connecting to %s...\n", ssid);
+    WiFi.begin(ssid, password);
+    int attempts = 0;
+
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+        delay(1000);
+        Serial.print(".");
+        attempts++;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("Connected to %s\n", ssid);
+    } else {
+        Serial.println("Failed to connect to WiFi. Triggering watchdog.");
+        // Trigger watchdog reset
+        while (true);
+    }
+}
+
+void task1(void *pvParameters) {
+    for (;;) {
+        Serial.println("Task 1 is running");
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+}
+
+void task2(void *pvParameters) {
+    for (;;) {
+        Serial.println("Task 2 is running");
+        vTaskDelay(2500 / portTICK_PERIOD_MS);
+    }
+}
+
+void task3(void *pvParameters) {
+    for (;;) {
+        Serial.println("Task 3 is running");
+        vTaskDelay(3000 / portTICK_PERIOD_MS);
+    }
 }
